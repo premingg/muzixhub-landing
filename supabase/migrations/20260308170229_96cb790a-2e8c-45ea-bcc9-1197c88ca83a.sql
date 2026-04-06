@@ -1,0 +1,1 @@
+ALTER TABLE public.songs ADD COLUMN duration integer DEFAULT 0;

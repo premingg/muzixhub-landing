@@ -1,0 +1,1 @@
+CREATE POLICY "Users can update their own recently played" ON public.recently_played FOR UPDATE TO authenticated USING (auth.uid() = user_id);

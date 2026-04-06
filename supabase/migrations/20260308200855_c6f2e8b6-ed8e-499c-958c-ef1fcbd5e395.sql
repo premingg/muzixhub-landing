@@ -1,0 +1,1 @@
+ALTER TABLE public.recently_played ADD COLUMN listened_duration integer DEFAULT 0;

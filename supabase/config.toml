@@ -1,0 +1,7 @@
+project_id = "lbwtbojhbqyfgdowjcwi"
+
+[functions.telegram-stream]
+verify_jwt = false
+
+[functions.telegram-upload]
+verify_jwt = false
