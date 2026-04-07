@@ -93,6 +93,17 @@ export default function Profile() {
     async function load() {
       if (!user) return;
 
+      // Get minutes from user_listening_activity (accurate source)
+      const { data: activityData } = await supabase
+        .from("user_listening_activity")
+        .select("minutes_listened")
+        .eq("user_id", user.id);
+      
+      if (activityData && activityData.length > 0) {
+        const total = (activityData as any[]).reduce((sum, a) => sum + (a.minutes_listened || 0), 0);
+        setTotalMinutes(Math.round(total));
+      }
+
       const { data: recentData } = await supabase
         .from("recently_played")
         .select("song_id, played_at, songs(*)")
@@ -100,7 +111,6 @@ export default function Profile() {
         .order("played_at", { ascending: false });
 
       if (recentData && recentData.length > 0) {
-        let totalSecs = 0;
         const genreCount: Record<string, number> = {};
         const songPlayCount: Record<string, { song: Song; count: number }> = {};
         const artistPlays: Record<string, number> = {};
@@ -108,7 +118,6 @@ export default function Profile() {
         for (const r of recentData) {
           const song = r.songs as unknown as Song;
           if (song) {
-            totalSecs += (r as any).listened_duration || 0;
             if (song.genre) genreCount[song.genre] = (genreCount[song.genre] || 0) + 1;
             if (!songPlayCount[song.id]) songPlayCount[song.id] = { song, count: 0 };
             songPlayCount[song.id].count++;
@@ -116,7 +125,6 @@ export default function Profile() {
           }
         }
 
-        setTotalMinutes(Math.round(totalSecs / 60));
         const topG = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0];
         if (topG) setTopGenre(topG[0]);
 
@@ -133,7 +141,6 @@ export default function Profile() {
 
         if (sortedArtists.length > 0) {
           const artistNames = sortedArtists.map(([name]) => name);
-          // Fetch artist images - try exact match first, then case-insensitive
           const { data: artistsData } = await supabase
             .from("artists")
             .select("name, image_url");
@@ -227,7 +234,7 @@ export default function Profile() {
           </div>
         </motion.div>
 
-        {/* Stats Grid - removed Songs Played */}
+        {/* Stats Grid */}
         {loading ? <StatsSkeleton /> : (
           <motion.div className="grid grid-cols-2 md:grid-cols-3 gap-3" variants={staggerContainer} initial="hidden" animate="show">
             {[

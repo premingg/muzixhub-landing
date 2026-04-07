@@ -23,13 +23,13 @@ interface PulseSession {
 }
 
 type BroadcastEvent =
-  | { type: 'play'; position: number; actioner: string }
-  | { type: 'pause'; position: number; actioner: string }
-  | { type: 'seek'; position: number; actioner: string }
-  | { type: 'song_change'; song: Song; actioner: string }
-  | { type: 'queue_update'; queue: Song[]; actioner: string }
-  | { type: 'skip'; song: Song; actioner: string }
-  | { type: 'session_end'; actioner: string }
+  | { type: 'play'; position: number; actioner: string; actionerId: string }
+  | { type: 'pause'; position: number; actioner: string; actionerId: string }
+  | { type: 'seek'; position: number; actioner: string; actionerId: string }
+  | { type: 'song_change'; song: Song; actioner: string; actionerId: string }
+  | { type: 'queue_update'; queue: Song[]; actioner: string; actionerId: string }
+  | { type: 'skip'; song: Song; actioner: string; actionerId: string }
+  | { type: 'session_end'; actioner: string; actionerId: string }
   | { type: 'heartbeat'; member_count: number };
 
 function generateRoomCode() {
@@ -59,7 +59,6 @@ export default function Pulse() {
 
   const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const dbChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const isLocalAction = useRef(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const positionSyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -98,11 +97,13 @@ export default function Pulse() {
     // Broadcast channel for instant events
     const bc = supabase.channel(`pulse-broadcast-${sessionId}`)
       .on('broadcast', { event: 'pulse_event' }, ({ payload }) => {
-        if (isLocalAction.current) {
-          isLocalAction.current = false;
+        const event = payload as BroadcastEvent;
+        
+        // Skip events we sent ourselves (use actionerId to identify)
+        if ('actionerId' in event && event.actionerId === user?.id) {
           return;
         }
-        const event = payload as BroadcastEvent;
+        
         const player = usePlayerStore.getState();
 
         switch (event.type) {
@@ -110,23 +111,28 @@ export default function Pulse() {
           case 'skip':
             player.playSong(event.song);
             setActiveSong(event.song);
+            setActiveSession(prev => prev ? { ...prev, is_playing: true, current_song_data: event.song, current_position: 0 } : null);
             toast(`${event.actioner} is playing "${event.song.title}" 🎵`, { duration: 3000 });
             break;
           case 'play':
             if (!player.isPlaying) player.togglePlay();
             setTimeout(() => player.seekTo(event.position), 100);
+            setActiveSession(prev => prev ? { ...prev, is_playing: true, current_position: event.position } : null);
             toast(`${event.actioner} resumed ▶️`, { duration: 2000 });
             break;
           case 'pause':
             if (player.isPlaying) player.togglePlay();
             player.seekTo(event.position);
+            setActiveSession(prev => prev ? { ...prev, is_playing: false, current_position: event.position } : null);
             toast(`${event.actioner} paused ⏸`, { duration: 2000 });
             break;
           case 'seek':
             player.seekTo(event.position);
+            setActiveSession(prev => prev ? { ...prev, current_position: event.position } : null);
             break;
           case 'queue_update':
             setRoomQueue(event.queue);
+            setActiveSession(prev => prev ? { ...prev, queue: event.queue } : null);
             break;
           case 'session_end':
             toast.error('The Pulse session has ended');
@@ -157,7 +163,7 @@ export default function Pulse() {
       .subscribe();
 
     dbChannelRef.current = dc;
-  }, [cleanupAndLeave]);
+  }, [cleanupAndLeave, user?.id]);
 
   // Create session
   const handleCreate = async () => {
@@ -239,7 +245,6 @@ export default function Pulse() {
   // Play song
   const playSongInPulse = useCallback(async (song: Song) => {
     if (!activeSession) return;
-    isLocalAction.current = true;
 
     await pulseTable().update({
       current_song_data: song as any,
@@ -249,20 +254,19 @@ export default function Pulse() {
       position_updated_at: new Date().toISOString(),
     }).eq("id", activeSession.id);
 
-    sendBroadcast({ type: 'song_change', song, actioner: displayName });
+    sendBroadcast({ type: 'song_change', song, actioner: displayName, actionerId: user?.id || '' });
     usePlayerStore.getState().playSong(song);
     setActiveSong(song);
     setActiveSession(prev => prev ? { ...prev, current_song_data: song, current_song_id: song.id, is_playing: true, current_position: 0 } : null);
     setShowSongPicker(false);
     setSearchQuery("");
-  }, [activeSession, sendBroadcast, displayName]);
+  }, [activeSession, sendBroadcast, displayName, user?.id]);
 
   // Toggle play/pause
   const togglePlayInPulse = useCallback(async () => {
     if (!activeSession) return;
     const newIsPlaying = !activeSession.is_playing;
     const currentPos = usePlayerStore.getState().progress;
-    isLocalAction.current = true;
 
     await pulseTable().update({
       is_playing: newIsPlaying,
@@ -274,17 +278,17 @@ export default function Pulse() {
       type: newIsPlaying ? 'play' : 'pause',
       position: currentPos,
       actioner: displayName,
+      actionerId: user?.id || '',
     });
     usePlayerStore.getState().togglePlay();
     setActiveSession(prev => prev ? { ...prev, is_playing: newIsPlaying, current_position: currentPos } : null);
-  }, [activeSession, sendBroadcast, displayName]);
+  }, [activeSession, sendBroadcast, displayName, user?.id]);
 
   // Skip
   const skipInPulse = useCallback(async () => {
     if (!activeSession || roomQueue.length === 0) return;
     const nextSong = roomQueue[0];
     const newQueue = roomQueue.slice(1);
-    isLocalAction.current = true;
 
     await pulseTable().update({
       current_song_data: nextSong as any,
@@ -295,12 +299,12 @@ export default function Pulse() {
       queue: newQueue as any,
     }).eq("id", activeSession.id);
 
-    sendBroadcast({ type: 'skip', song: nextSong, actioner: displayName });
+    sendBroadcast({ type: 'skip', song: nextSong, actioner: displayName, actionerId: user?.id || '' });
     usePlayerStore.getState().playSong(nextSong);
     setActiveSong(nextSong);
     setRoomQueue(newQueue);
     setActiveSession(prev => prev ? { ...prev, current_song_data: nextSong, current_song_id: nextSong.id, is_playing: true, current_position: 0, queue: newQueue } : null);
-  }, [activeSession, roomQueue, sendBroadcast, displayName]);
+  }, [activeSession, roomQueue, sendBroadcast, displayName, user?.id]);
 
   // Add to queue
   const addToQueueInPulse = useCallback(async (song: Song) => {
@@ -308,7 +312,7 @@ export default function Pulse() {
     const newQueue = [...roomQueue, song];
 
     await pulseTable().update({ queue: newQueue as any }).eq("id", activeSession.id);
-    sendBroadcast({ type: 'queue_update', queue: newQueue, actioner: displayName });
+    sendBroadcast({ type: 'queue_update', queue: newQueue, actioner: displayName, actionerId: user?.id || '' });
     setRoomQueue(newQueue);
     setActiveSession(prev => prev ? { ...prev, queue: newQueue } : null);
     toast.success(`"${song.title}" added to Pulse queue`);
@@ -316,24 +320,24 @@ export default function Pulse() {
     if (!activeSession.current_song_data) {
       playSongInPulse(song);
     }
-  }, [activeSession, roomQueue, sendBroadcast, displayName, playSongInPulse]);
+  }, [activeSession, roomQueue, sendBroadcast, displayName, playSongInPulse, user?.id]);
 
   // Remove from queue
   const removeFromQueue = useCallback(async (index: number) => {
     if (!activeSession) return;
     const newQueue = roomQueue.filter((_, i) => i !== index);
     await pulseTable().update({ queue: newQueue as any }).eq("id", activeSession.id);
-    sendBroadcast({ type: 'queue_update', queue: newQueue, actioner: displayName });
+    sendBroadcast({ type: 'queue_update', queue: newQueue, actioner: displayName, actionerId: user?.id || '' });
     setRoomQueue(newQueue);
     setActiveSession(prev => prev ? { ...prev, queue: newQueue } : null);
-  }, [activeSession, roomQueue, sendBroadcast, displayName]);
+  }, [activeSession, roomQueue, sendBroadcast, displayName, user?.id]);
 
   // Leave / End
   const leaveSession = async () => {
     if (!activeSession || !user) return;
 
     if (isCreator) {
-      sendBroadcast({ type: 'session_end', actioner: displayName });
+      sendBroadcast({ type: 'session_end', actioner: displayName, actionerId: user.id });
       await pulseTable().delete().eq("id", activeSession.id);
     } else {
       await pulseTable().update({ member_count: Math.max(1, (activeSession.member_count || 1) - 1) }).eq("id", activeSession.id);
@@ -459,36 +463,33 @@ export default function Pulse() {
             <div className="flex flex-col items-center py-6 text-center">
               <Music className="h-10 w-10 text-muted-foreground mb-2" />
               <p className="text-muted-foreground text-sm">No song playing yet</p>
-              <p className="text-muted-foreground text-xs mt-1">Pick a song to start the Pulse!</p>
+              <button
+                onClick={() => { setPickerMode("play"); setShowSongPicker(true); }}
+                className="mt-3 text-sm text-primary hover:underline"
+              >
+                Pick a song to start
+              </button>
             </div>
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => { setPickerMode("play"); setShowSongPicker(true); loadSongs(); }}
-            className="flex-1 gradient-primary text-primary-foreground font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-          >
-            <Zap className="h-4 w-4" /> Pick a Song
-          </button>
-          <button
-            onClick={() => { setPickerMode("queue"); setShowSongPicker(true); loadSongs(); }}
-            className="flex-1 bg-secondary text-foreground font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-secondary/80 transition-colors"
-          >
-            <Plus className="h-4 w-4" /> Add to Queue
-          </button>
-        </div>
-
         {/* Queue */}
-        {roomQueue.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-              <ListMusic className="h-4 w-4" /> Up Next ({roomQueue.length})
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <ListMusic className="h-4 w-4" /> Queue ({roomQueue.length})
             </h3>
+            <button
+              onClick={() => { setPickerMode(activeSong ? "queue" : "play"); setShowSongPicker(true); }}
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Song
+            </button>
+          </div>
+          {roomQueue.length > 0 ? (
             <div className="space-y-1">
               {roomQueue.map((song, i) => (
-                <div key={`${song.id}-${i}`} className="flex items-center gap-3 p-2 rounded-lg bg-card border border-border/50">
+                <div key={`${song.id}-${i}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/60 transition-colors">
                   <span className="text-xs text-muted-foreground w-5 text-right">{i + 1}</span>
                   <div className="h-9 w-9 rounded bg-secondary overflow-hidden flex-shrink-0">
                     {song.cover_image_url ? (
@@ -497,18 +498,20 @@ export default function Pulse() {
                       <div className="h-full w-full gradient-primary opacity-30" />
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">{song.title}</p>
                     <p className="text-xs text-muted-foreground truncate">{song.artist}</p>
                   </div>
-                  <button onClick={() => removeFromQueue(i)} className="text-muted-foreground hover:text-destructive transition-colors p-1">
-                    <Trash2 className="h-3.5 w-3.5" />
+                  <button onClick={() => removeFromQueue(i)} className="h-7 w-7 rounded-full hover:bg-destructive/10 flex items-center justify-center transition-colors">
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
                   </button>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">Queue is empty</p>
+          )}
+        </div>
 
         {/* Song Picker Modal */}
         <AnimatePresence>
@@ -521,69 +524,59 @@ export default function Pulse() {
               onClick={() => setShowSongPicker(false)}
             >
               <motion.div
-                initial={{ y: "100%" }}
+                initial={{ y: 100 }}
                 animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="bg-background rounded-t-2xl md:rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+                exit={{ y: 100 }}
+                className="bg-card border border-border rounded-t-2xl md:rounded-2xl w-full md:max-w-lg max-h-[80vh] flex flex-col"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="p-4 border-b border-border flex items-center justify-between">
-                  <h3 className="text-lg font-display font-semibold text-foreground">
+                  <h3 className="font-display font-bold text-foreground">
                     {pickerMode === "play" ? "Pick a Song" : "Add to Queue"}
                   </h3>
-                  <button onClick={() => setShowSongPicker(false)} className="text-muted-foreground hover:text-foreground p-1">
-                    <X className="h-5 w-5" />
+                  <button onClick={() => setShowSongPicker(false)}>
+                    <X className="h-5 w-5 text-muted-foreground" />
                   </button>
                 </div>
-                <div className="p-4">
+                <div className="p-3">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
-                      type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search songs..."
-                      className="w-full bg-secondary rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="w-full bg-secondary rounded-lg pl-10 pr-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
                       autoFocus
                     />
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
-                  {filteredSongs.map((s) => (
-                    <div key={s.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/60 transition-colors">
+                <div className="flex-1 overflow-y-auto p-3 pt-0 space-y-0.5">
+                  {filteredSongs.map((song) => (
+                    <div
+                      key={song.id}
+                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-secondary/60 cursor-pointer transition-colors"
+                      onClick={() => pickerMode === "play" ? playSongInPulse(song) : addToQueueInPulse(song)}
+                    >
                       <div className="h-10 w-10 rounded bg-secondary overflow-hidden flex-shrink-0">
-                        {s.cover_image_url ? (
-                          <CoverImg src={s.cover_image_url} alt="" className="h-full w-full object-cover" />
+                        {song.cover_image_url ? (
+                          <CoverImg src={song.cover_image_url} alt="" className="h-full w-full object-cover" />
                         ) : (
                           <div className="h-full w-full gradient-primary opacity-30" />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
-                        <p className="text-xs text-muted-foreground truncate">{s.artist}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate">{song.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{song.artist}</p>
                       </div>
-                      <div className="flex gap-1.5">
-                        {pickerMode === "play" ? (
-                          <button
-                            onClick={() => playSongInPulse(s)}
-                            className="text-xs font-medium gradient-primary text-primary-foreground px-3 py-1.5 rounded-full hover:opacity-90 transition-opacity"
-                          >
-                            Play
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => { addToQueueInPulse(s); setShowSongPicker(false); }}
-                            className="text-xs font-medium bg-secondary text-foreground px-3 py-1.5 rounded-full hover:bg-secondary/80 transition-colors"
-                          >
-                            Add
-                          </button>
-                        )}
-                      </div>
+                      {pickerMode === "queue" ? (
+                        <Plus className="h-4 w-4 text-primary flex-shrink-0" />
+                      ) : (
+                        <Play className="h-4 w-4 text-primary flex-shrink-0" />
+                      )}
                     </div>
                   ))}
                   {filteredSongs.length === 0 && (
-                    <p className="text-center text-muted-foreground text-sm py-8">No songs found</p>
+                    <p className="text-center text-sm text-muted-foreground py-8">No songs found</p>
                   )}
                 </div>
               </motion.div>
@@ -596,111 +589,61 @@ export default function Pulse() {
 
   // ===== LOBBY VIEW =====
   return (
-    <div className="p-4 md:p-6 space-y-6 pb-32">
-      <div className="text-center py-8">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 200, damping: 15 }}
-        >
-          <Zap className="h-12 w-12 text-primary mx-auto mb-3" />
-        </motion.div>
+    <div className="p-4 md:p-6 space-y-8">
+      <div className="text-center space-y-2 pt-8">
+        <Zap className="h-12 w-12 text-primary mx-auto" />
         <h1 className="text-3xl font-display font-bold text-foreground">Pulse</h1>
-        <p className="text-muted-foreground mt-1">Listen together, in perfect sync.</p>
+        <p className="text-muted-foreground max-w-md mx-auto">
+          Listen together in real-time. Create a session or join one with a code.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg mx-auto">
-        {/* Start a Pulse */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-card border border-border rounded-2xl p-6 space-y-4"
+      <div className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex-1 flex items-center justify-center gap-2 gradient-primary text-primary-foreground font-semibold py-3 px-6 rounded-xl hover:opacity-90 transition-opacity"
         >
-          <div className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center">
-              <Plus className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h3 className="font-display font-semibold text-foreground">Start a Pulse</h3>
-              <p className="text-xs text-muted-foreground">Create a session & share the code</p>
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {showCreate ? (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-3 overflow-hidden">
-                <input
-                  type="text"
-                  value={sessionName}
-                  onChange={(e) => setSessionName(e.target.value)}
-                  placeholder="Session name..."
-                  className="w-full bg-secondary rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button onClick={handleCreate} className="flex-1 gradient-primary text-primary-foreground font-medium py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                    Create
-                  </button>
-                  <button onClick={() => setShowCreate(false)} className="px-4 py-2.5 rounded-lg bg-secondary text-muted-foreground text-sm hover:bg-secondary/80 transition-colors">
-                    Cancel
-                  </button>
-                </div>
-              </motion.div>
-            ) : (
-              <button onClick={() => setShowCreate(true)} className="w-full gradient-primary text-primary-foreground font-medium py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                Start a Pulse
-              </button>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Join a Pulse */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-card border border-border rounded-2xl p-6 space-y-4"
+          <Plus className="h-5 w-5" /> Create Session
+        </button>
+        <button
+          onClick={() => setShowJoin(true)}
+          className="flex-1 flex items-center justify-center gap-2 bg-secondary text-foreground font-semibold py-3 px-6 rounded-xl hover:bg-secondary/80 transition-colors border border-border"
         >
-          <div className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center">
-              <LogIn className="h-5 w-5 text-foreground" />
-            </div>
-            <div>
-              <h3 className="font-display font-semibold text-foreground">Join a Pulse</h3>
-              <p className="text-xs text-muted-foreground">Enter a code to join a session</p>
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {showJoin ? (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-3 overflow-hidden">
-                <input
-                  type="text"
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  placeholder="Enter code..."
-                  maxLength={6}
-                  className="w-full bg-secondary rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-center tracking-[0.3em] font-mono uppercase"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button onClick={handleJoin} className="flex-1 gradient-primary text-primary-foreground font-medium py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                    Join
-                  </button>
-                  <button onClick={() => setShowJoin(false)} className="px-4 py-2.5 rounded-lg bg-secondary text-muted-foreground text-sm hover:bg-secondary/80 transition-colors">
-                    Cancel
-                  </button>
-                </div>
-              </motion.div>
-            ) : (
-              <button onClick={() => setShowJoin(true)} className="w-full bg-secondary text-foreground font-medium py-2.5 rounded-lg text-sm hover:bg-secondary/80 transition-colors">
-                Join a Pulse
-              </button>
-            )}
-          </AnimatePresence>
-        </motion.div>
+          <LogIn className="h-5 w-5" /> Join Session
+        </button>
       </div>
+
+      {/* Create Modal */}
+      <AnimatePresence>
+        {showCreate && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowCreate(false)}>
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-display font-bold text-foreground">Create a Pulse</h3>
+              <input value={sessionName} onChange={(e) => setSessionName(e.target.value)} placeholder="Session name..." className="w-full bg-secondary rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" autoFocus />
+              <div className="flex gap-2">
+                <button onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-lg bg-secondary text-foreground font-medium">Cancel</button>
+                <button onClick={handleCreate} className="flex-1 py-2.5 rounded-lg gradient-primary text-primary-foreground font-medium">Create</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Join Modal */}
+      <AnimatePresence>
+        {showJoin && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowJoin(false)}>
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-display font-bold text-foreground">Join a Pulse</h3>
+              <input value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="Enter 6-digit code..." maxLength={6} className="w-full bg-secondary rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-center tracking-[0.3em] font-mono text-lg" autoFocus />
+              <div className="flex gap-2">
+                <button onClick={() => setShowJoin(false)} className="flex-1 py-2.5 rounded-lg bg-secondary text-foreground font-medium">Cancel</button>
+                <button onClick={handleJoin} className="flex-1 py-2.5 rounded-lg gradient-primary text-primary-foreground font-medium">Join</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
