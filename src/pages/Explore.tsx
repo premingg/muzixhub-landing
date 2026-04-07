@@ -89,6 +89,7 @@ function HScrollSkeleton() {
 
 export default function Explore() {
   const [allSongs, setAllSongs] = useState<Song[]>([]);
+  const [trendingSongs, setTrendingSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -102,6 +103,35 @@ export default function Explore() {
       ]);
       const songs = songsRes.data || [];
       setAllSongs(songs);
+
+      // Trending: songs with most plays in the last 24 hours (from recently_played)
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentPlays } = await supabase
+        .from("recently_played")
+        .select("song_id")
+        .gte("played_at", twentyFourHoursAgo);
+
+      if (recentPlays && recentPlays.length > 0) {
+        // Count plays per song in last 24h
+        const playCounts: Record<string, number> = {};
+        for (const rp of recentPlays) {
+          playCounts[rp.song_id] = (playCounts[rp.song_id] || 0) + 1;
+        }
+        // Sort by play count and pick top 8
+        const sortedSongIds = Object.entries(playCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([id]) => id);
+
+        const songMap = new Map(songs.map(s => [s.id, s]));
+        const trending = sortedSongIds
+          .map(id => songMap.get(id))
+          .filter(Boolean) as Song[];
+        setTrendingSongs(trending);
+      } else {
+        // Fallback: top by all-time plays if no recent data
+        setTrendingSongs([...songs].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 8));
+      }
 
       if (albumsRes.data) {
         const withCounts = await Promise.all(
@@ -117,7 +147,6 @@ export default function Explore() {
     load();
   }, []);
 
-  const trendingSongs = [...allSongs].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 8);
   const now = new Date();
   const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
   const newReleases = allSongs.filter((s) => new Date(s.created_at) >= fortyEightHoursAgo);
@@ -153,6 +182,7 @@ export default function Explore() {
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="h-5 w-5 text-primary" />
               <h2 className="text-lg md:text-xl font-display font-bold text-foreground">Trending</h2>
+              <span className="text-xs text-muted-foreground ml-1">Last 24h</span>
             </div>
             {/* Mobile: horizontal scroll */}
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide md:hidden">
@@ -219,7 +249,7 @@ export default function Explore() {
           </motion.section>
         )}
 
-        {/* Browse Genres — moved to bottom */}
+        {/* Browse Genres */}
         <motion.section initial="hidden" animate="show" variants={stagger}>
           <motion.div variants={fadeUp} className="flex items-center gap-2 mb-4">
             <Music className="h-5 w-5 text-primary" />

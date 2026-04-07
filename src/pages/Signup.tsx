@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, User, Loader2, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { BrandLogo } from "@/components/layout/Navbar";
+import { useAuthStore } from "@/store/authStore";
 
 export default function Signup() {
   const [username, setUsername] = useState("");
@@ -27,8 +28,6 @@ export default function Signup() {
     e.preventDefault();
     setLoading(true);
 
-    let profileImageUrl: string | null = null;
-
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -44,6 +43,9 @@ export default function Signup() {
     }
 
     if (avatarFile && authData.user) {
+      // Wait briefly for the profile trigger to create the row
+      await new Promise(r => setTimeout(r, 1500));
+
       const fileExt = avatarFile.name.split('.').pop();
       const filePath = `${authData.user.id}/avatar.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -54,12 +56,20 @@ export default function Signup() {
         const { data: urlData } = supabase.storage
           .from('avatars')
           .getPublicUrl(filePath);
-        profileImageUrl = urlData.publicUrl;
+        const profileImageUrl = `${urlData.publicUrl}?t=${Date.now()}`;
 
-        await supabase
-          .from('profiles')
-          .update({ profile_image: profileImageUrl })
-          .eq('user_id', authData.user.id);
+        // Retry profile update up to 3 times (trigger may be slow)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { error: updateErr } = await supabase
+            .from('profiles')
+            .update({ profile_image: profileImageUrl })
+            .eq('user_id', authData.user.id);
+          if (!updateErr) break;
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // Refresh profile in store
+        await useAuthStore.getState().fetchProfile(authData.user.id);
       }
     }
 
