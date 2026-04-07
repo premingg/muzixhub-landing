@@ -74,7 +74,7 @@ export function useFollowArtist(artistName: string) {
     } else {
       await supabase
         .from("follows")
-        .insert({ user_id: user.id, artist_id: artist.id } as any);
+        .insert({ user_id: user.id, artist_id: artist.id });
       setIsFollowing(true);
       setFollowersCount((c) => c + 1);
     }
