@@ -32,6 +32,7 @@ interface PlayerState {
   toggleRepeat: () => void;
   toggleFullPlayer: () => void;
   toggleQueue: () => void;
+  closePlayer: () => void;
   addToQueue: (song: Song) => void;
   playNext: (song: Song) => void;
   removeFromQueue: (index: number) => void;
@@ -319,6 +320,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   toggleFullPlayer: () => set((s) => ({ showFullPlayer: !s.showFullPlayer })),
   toggleQueue: () => set((s) => ({ showQueue: !s.showQueue })),
+
+  closePlayer: () => {
+    saveListenedDuration();
+    const { audio } = get();
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+    }
+    set({
+      currentSong: null,
+      queue: [],
+      isPlaying: false,
+      progress: 0,
+      duration: 0,
+      showFullPlayer: false,
+      showQueue: false,
+      audio: null,
+    });
+  },
 
   addToQueue: (song) => {
     const { currentSong, queue } = get();

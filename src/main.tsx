@@ -13,8 +13,10 @@ const isInIframe = (() => {
 
 const isPreviewHost =
   window.location.hostname.includes("id-preview--");
+const isLocalhost =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
-if (isPreviewHost || isInIframe) {
+if (isPreviewHost || isInIframe || isLocalhost) {
   navigator.serviceWorker?.getRegistrations().then((registrations) => {
     registrations.forEach((r) => r.unregister());
   });

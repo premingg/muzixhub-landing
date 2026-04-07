@@ -1,6 +1,6 @@
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, Volume1, VolumeX,
-  Heart, ChevronUp, LayoutList, Shuffle, Repeat, Repeat1
+  Heart, ChevronUp, LayoutList, Shuffle, Repeat, Repeat1, X
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { usePlayerStore } from "@/store/playerStore";
@@ -22,10 +22,11 @@ export function MiniPlayer() {
     currentSong, isPlaying, progress, duration, volume,
     shuffle, repeat,
     togglePlay, nextSong, prevSong, setVolume, seekTo,
-    toggleFullPlayer, toggleQueue, toggleShuffle, toggleRepeat,
+    toggleFullPlayer, toggleQueue, toggleShuffle, toggleRepeat, closePlayer,
   } = usePlayerStore();
   const { isLiked, toggleLike } = useLikedSongs();
   const navigate = useNavigate();
+  const coverUrl = useSongCover(currentSong);
 
   const trackSlider = useDraggableSlider((pct) => { if (duration) seekTo(pct * duration); });
   const volumeSlider = useDraggableSlider((pct) => setVolume(pct));
@@ -34,7 +35,6 @@ export function MiniPlayer() {
 
   const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
   const volumePercent = volume * 100;
-  const coverUrl = useSongCover(currentSong);
 
   const VolumeIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
@@ -80,6 +80,9 @@ export function MiniPlayer() {
             </button>
             <button onClick={(e) => { e.stopPropagation(); nextSong(); }} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground active:text-foreground">
               <SkipForward className="h-4 w-4" fill="currentColor" strokeWidth={0} />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); closePlayer(); }} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground active:text-foreground" aria-label="Close mini player">
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -162,6 +165,9 @@ export function MiniPlayer() {
 
         {/* Right: queue, expand, volume */}
         <div className="flex items-center gap-3 w-[20%] justify-end">
+          <motion.button whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.88 }} onClick={closePlayer} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Close mini player">
+            <X className="h-4 w-4" strokeWidth={1.5} />
+          </motion.button>
           <motion.button whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.88 }} onClick={toggleQueue} className="text-muted-foreground hover:text-foreground transition-colors">
             <LayoutList className="h-4 w-4" strokeWidth={1.5} />
           </motion.button>
