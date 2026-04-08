@@ -148,40 +148,8 @@ const trackPlay = async (songId: string) => {
   }
 };
 
-// Preload cache: keep at most 3 preloaded audio blob URLs
-const preloadCache = new Map<string, string>();
-const MAX_PRELOAD = 3;
-
-async function preloadSongs(songs: Song[]) {
-  const toPreload = songs.filter(s => !preloadCache.has(s.id));
-  for (const song of toPreload) {
-    if (preloadCache.size >= MAX_PRELOAD) {
-      const firstKey = preloadCache.keys().next().value;
-      if (firstKey) {
-        preloadCache.delete(firstKey);
-      }
-    }
-    try {
-      const url = await getAudioBlobUrl(song as any);
-      if (url) preloadCache.set(song.id, url);
-    } catch {}
-  }
-}
-
-function getNextSongsToPreload(queue: Song[], currentSong: Song | null): Song[] {
-  if (queue.length === 0 || !currentSong) return [];
-  const idx = queue.findIndex(s => s.id === currentSong.id);
-  if (idx === -1) return queue.slice(0, 2);
-  return queue.slice(idx + 1, idx + 3);
-}
-
-async function resolveAudioSrc(song: Song): Promise<string | null> {
-  const cached = preloadCache.get(song.id);
-  if (cached) {
-    preloadCache.delete(song.id);
-    return cached;
-  }
-  return getAudioBlobUrl(song as any);
+function resolveAudioSrc(song: Song): string | null {
+  return getAudioUrl(song as any);
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
