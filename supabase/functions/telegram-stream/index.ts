@@ -73,8 +73,12 @@ Deno.serve(async (req) => {
     }
 
     // Proxy mode: stream the file through our edge function
-    const fileRes = await fetch(downloadUrl);
-    if (!fileRes.ok) {
+    // Support Range requests for seeking
+    const rangeHeader = req.headers.get("Range");
+    const fileRes = await fetch(downloadUrl, {
+      headers: rangeHeader ? { Range: rangeHeader } : {},
+    });
+    if (!fileRes.ok && fileRes.status !== 206) {
       throw new Error(`Failed to download file from Telegram: ${fileRes.status}`);
     }
 
@@ -91,11 +95,15 @@ Deno.serve(async (req) => {
     const headers = new Headers(corsHeaders);
     headers.set("Content-Type", contentType);
     headers.set("Cache-Control", "public, max-age=3600");
+    headers.set("Accept-Ranges", "bytes");
     if (fileRes.headers.get("content-length")) {
       headers.set("Content-Length", fileRes.headers.get("content-length")!);
     }
+    if (fileRes.headers.get("content-range")) {
+      headers.set("Content-Range", fileRes.headers.get("content-range")!);
+    }
 
-    return new Response(fileRes.body, { status: 200, headers });
+    return new Response(fileRes.body, { status: fileRes.status, headers });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Telegram stream error:", message);
