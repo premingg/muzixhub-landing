@@ -182,39 +182,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       ...(queue ? { queue } : {}),
     });
 
-    resolveAudioSrc(song).then((audioSrc) => {
-      if (!audioSrc) return;
-      // Ensure we're still on the same song
-      if (get().currentSong?.id !== song.id) return;
+    const audioSrc = resolveAudioSrc(song);
+    if (!audioSrc) return;
 
-      const audio = new Audio(audioSrc);
-      audio.volume = get().volume;
+    const audio = new Audio(audioSrc);
+    audio.volume = get().volume;
 
-      audio.addEventListener('timeupdate', () => {
-        set({ progress: audio.currentTime });
-      });
-      audio.addEventListener('loadedmetadata', () => {
-        set({ duration: audio.duration });
-      });
-      audio.addEventListener('ended', () => {
-        get().handleSongEnd();
-      });
-
-      audio.play();
-      set({ audio, isPlaying: true });
-
-      try {
-        localStorage.setItem('muzixhub_last_song', JSON.stringify(song));
-        if (queue) localStorage.setItem('muzixhub_last_queue', JSON.stringify(queue));
-      } catch {}
-
-      trackPlay(song.id);
-
-      const upcoming = getNextSongsToPreload(newQueue, song);
-      if (upcoming.length > 0) preloadSongs(upcoming);
-    }).catch((err) => {
-      console.error('Failed to resolve audio:', err);
+    audio.addEventListener('timeupdate', () => {
+      set({ progress: audio.currentTime });
     });
+    audio.addEventListener('loadedmetadata', () => {
+      set({ duration: audio.duration });
+    });
+    audio.addEventListener('ended', () => {
+      get().handleSongEnd();
+    });
+
+    audio.play();
+    set({ audio, isPlaying: true });
+
+    try {
+      localStorage.setItem('muzixhub_last_song', JSON.stringify(song));
+      if (queue) localStorage.setItem('muzixhub_last_queue', JSON.stringify(queue));
+    } catch {}
+
+    trackPlay(song.id);
   },
 
   togglePlay: () => {
