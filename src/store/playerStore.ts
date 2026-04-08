@@ -426,12 +426,12 @@ if (typeof window !== 'undefined') {
       const state = usePlayerStore.getState();
       if (state.currentSong) return;
 
-      resolveAudioSrc(song).then((audioSrc) => {
-        if (!audioSrc) return;
-        const currentState = usePlayerStore.getState();
-        if (currentState.currentSong) return;
+      const audioSrc = resolveAudioSrc(song);
+      if (!audioSrc) return;
+      const currentState = usePlayerStore.getState();
+      if (currentState.currentSong) return;
 
-        const audio = new Audio(audioSrc);
+      const audio = new Audio(audioSrc);
         audio.volume = currentState.volume;
         audio.addEventListener('timeupdate', () => {
           usePlayerStore.setState({ progress: audio.currentTime });
