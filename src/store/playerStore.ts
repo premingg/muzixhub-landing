@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { updateListeningStreak } from '@/hooks/useListeningStreak';
-import { getAudioBlobUrl } from '@/lib/telegram';
+import { getAudioUrl } from '@/lib/telegram';
 
 
 export type Song = Tables<'songs'>;
@@ -148,40 +148,8 @@ const trackPlay = async (songId: string) => {
   }
 };
 
-// Preload cache: keep at most 3 preloaded audio blob URLs
-const preloadCache = new Map<string, string>();
-const MAX_PRELOAD = 3;
-
-async function preloadSongs(songs: Song[]) {
-  const toPreload = songs.filter(s => !preloadCache.has(s.id));
-  for (const song of toPreload) {
-    if (preloadCache.size >= MAX_PRELOAD) {
-      const firstKey = preloadCache.keys().next().value;
-      if (firstKey) {
-        preloadCache.delete(firstKey);
-      }
-    }
-    try {
-      const url = await getAudioBlobUrl(song as any);
-      if (url) preloadCache.set(song.id, url);
-    } catch {}
-  }
-}
-
-function getNextSongsToPreload(queue: Song[], currentSong: Song | null): Song[] {
-  if (queue.length === 0 || !currentSong) return [];
-  const idx = queue.findIndex(s => s.id === currentSong.id);
-  if (idx === -1) return queue.slice(0, 2);
-  return queue.slice(idx + 1, idx + 3);
-}
-
-async function resolveAudioSrc(song: Song): Promise<string | null> {
-  const cached = preloadCache.get(song.id);
-  if (cached) {
-    preloadCache.delete(song.id);
-    return cached;
-  }
-  return getAudioBlobUrl(song as any);
+function resolveAudioSrc(song: Song): string | null {
+  return getAudioUrl(song as any);
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -214,39 +182,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       ...(queue ? { queue } : {}),
     });
 
-    resolveAudioSrc(song).then((audioSrc) => {
-      if (!audioSrc) return;
-      // Ensure we're still on the same song
-      if (get().currentSong?.id !== song.id) return;
+    const audioSrc = resolveAudioSrc(song);
+    if (!audioSrc) return;
 
-      const audio = new Audio(audioSrc);
-      audio.volume = get().volume;
+    const audio = new Audio(audioSrc);
+    audio.volume = get().volume;
 
-      audio.addEventListener('timeupdate', () => {
-        set({ progress: audio.currentTime });
-      });
-      audio.addEventListener('loadedmetadata', () => {
-        set({ duration: audio.duration });
-      });
-      audio.addEventListener('ended', () => {
-        get().handleSongEnd();
-      });
-
-      audio.play();
-      set({ audio, isPlaying: true });
-
-      try {
-        localStorage.setItem('muzixhub_last_song', JSON.stringify(song));
-        if (queue) localStorage.setItem('muzixhub_last_queue', JSON.stringify(queue));
-      } catch {}
-
-      trackPlay(song.id);
-
-      const upcoming = getNextSongsToPreload(newQueue, song);
-      if (upcoming.length > 0) preloadSongs(upcoming);
-    }).catch((err) => {
-      console.error('Failed to resolve audio:', err);
+    audio.addEventListener('timeupdate', () => {
+      set({ progress: audio.currentTime });
     });
+    audio.addEventListener('loadedmetadata', () => {
+      set({ duration: audio.duration });
+    });
+    audio.addEventListener('ended', () => {
+      get().handleSongEnd();
+    });
+
+    audio.play();
+    set({ audio, isPlaying: true });
+
+    try {
+      localStorage.setItem('muzixhub_last_song', JSON.stringify(song));
+      if (queue) localStorage.setItem('muzixhub_last_queue', JSON.stringify(queue));
+    } catch {}
+
+    trackPlay(song.id);
   },
 
   togglePlay: () => {
@@ -466,12 +426,12 @@ if (typeof window !== 'undefined') {
       const state = usePlayerStore.getState();
       if (state.currentSong) return;
 
-      resolveAudioSrc(song).then((audioSrc) => {
-        if (!audioSrc) return;
-        const currentState = usePlayerStore.getState();
-        if (currentState.currentSong) return;
+      const audioSrc = resolveAudioSrc(song);
+      if (!audioSrc) return;
+      const currentState = usePlayerStore.getState();
+      if (currentState.currentSong) return;
 
-        const audio = new Audio(audioSrc);
+      const audio = new Audio(audioSrc);
         audio.volume = currentState.volume;
         audio.addEventListener('timeupdate', () => {
           usePlayerStore.setState({ progress: audio.currentTime });
@@ -493,7 +453,6 @@ if (typeof window !== 'undefined') {
           isPlaying: false,
           progress: savedProgress,
         });
-      }).catch(() => {});
     } catch {}
   }, 100);
 }
