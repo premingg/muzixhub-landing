@@ -453,7 +453,6 @@ if (typeof window !== 'undefined') {
           isPlaying: false,
           progress: savedProgress,
         });
-      }).catch(() => {});
     } catch {}
   }, 100);
 }
