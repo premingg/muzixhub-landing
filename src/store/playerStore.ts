@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { updateListeningStreak } from '@/hooks/useListeningStreak';
-import { getAudioBlobUrl } from '@/lib/telegram';
+import { getAudioUrl } from '@/lib/telegram';
 
 
 export type Song = Tables<'songs'>;
