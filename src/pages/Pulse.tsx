@@ -84,7 +84,26 @@ export default function Pulse() {
     setSongs(data || []);
   };
 
+  // Play a song and seek to a specific position once loaded
+  const playSongAndSeek = useCallback((song: Song, position: number) => {
+    const player = usePlayerStore.getState();
+    player.playSong(song);
+    if (position > 0) {
+      // Wait for audio to load before seeking
+      const checkSeek = () => {
+        const audio = usePlayerStore.getState().audio;
+        if (audio && audio.readyState >= 1) {
+          audio.currentTime = position;
+        } else {
+          setTimeout(checkSeek, 100);
+        }
+      };
+      setTimeout(checkSeek, 200);
+    }
+  }, []);
+
   const cleanupAndLeave = useCallback(() => {
+    inPulseRef.current = false;
     if (broadcastChannelRef.current) {
       supabase.removeChannel(broadcastChannelRef.current);
       broadcastChannelRef.current = null;
