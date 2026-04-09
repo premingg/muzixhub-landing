@@ -122,6 +122,7 @@ export default function Pulse() {
 
   const subscribeToSession = useCallback((sessionId: string) => {
     inPulseRef.current = true;
+    usePlayerStore.getState().setInPulse(true);
 
     // Broadcast channel for instant events
     const bc = supabase.channel(`pulse-broadcast-${sessionId}`)
