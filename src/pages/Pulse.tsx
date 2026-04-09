@@ -104,6 +104,7 @@ export default function Pulse() {
 
   const cleanupAndLeave = useCallback(() => {
     inPulseRef.current = false;
+    usePlayerStore.getState().setInPulse(false);
     if (broadcastChannelRef.current) {
       supabase.removeChannel(broadcastChannelRef.current);
       broadcastChannelRef.current = null;
