@@ -19,6 +19,7 @@ interface PlayerState {
   showFullPlayer: boolean;
   showQueue: boolean;
   audio: HTMLAudioElement | null;
+  inPulse: boolean;
 
   playSong: (song: Song, queue?: Song[]) => void;
   togglePlay: () => void;
@@ -38,6 +39,7 @@ interface PlayerState {
   removeFromQueue: (index: number) => void;
   reorderQueue: (from: number, to: number) => void;
   handleSongEnd: () => void;
+  setInPulse: (v: boolean) => void;
 }
 
 let currentPlayRecordId: string | null = null;
