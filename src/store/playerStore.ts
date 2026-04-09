@@ -166,6 +166,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   showFullPlayer: false,
   showQueue: false,
   audio: null,
+  inPulse: false,
 
   playSong: (song, queue) => {
     const state = get();
