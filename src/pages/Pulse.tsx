@@ -101,12 +101,13 @@ export default function Pulse() {
   }, []);
 
   const subscribeToSession = useCallback((sessionId: string) => {
+    inPulseRef.current = true;
+
     // Broadcast channel for instant events
     const bc = supabase.channel(`pulse-broadcast-${sessionId}`)
       .on('broadcast', { event: 'pulse_event' }, ({ payload }) => {
         const event = payload as BroadcastEvent;
         
-        // Skip events we sent ourselves (use actionerId to identify)
         if ('actionerId' in event && event.actionerId === user?.id) {
           return;
         }
@@ -116,14 +117,14 @@ export default function Pulse() {
         switch (event.type) {
           case 'song_change':
           case 'skip':
-            player.playSong(event.song);
+            playSongAndSeek(event.song, 0);
             setActiveSong(event.song);
             setActiveSession(prev => prev ? { ...prev, is_playing: true, current_song_data: event.song, current_position: 0 } : null);
             toast(`${event.actioner} is playing "${event.song.title}" 🎵`, { duration: 3000 });
             break;
           case 'play':
             if (!player.isPlaying) player.togglePlay();
-            setTimeout(() => player.seekTo(event.position), 100);
+            player.seekTo(event.position);
             setActiveSession(prev => prev ? { ...prev, is_playing: true, current_position: event.position } : null);
             toast(`${event.actioner} resumed ▶️`, { duration: 2000 });
             break;
@@ -145,13 +146,25 @@ export default function Pulse() {
             toast.error('The Pulse session has ended');
             cleanupAndLeave();
             break;
+          case 'heartbeat': {
+            // Drift correction for non-creators
+            const hb = event as any;
+            if (hb.position != null && hb.is_playing) {
+              const playerState = usePlayerStore.getState();
+              const drift = Math.abs(playerState.progress - hb.position);
+              if (drift > 2) {
+                playerState.seekTo(hb.position);
+              }
+            }
+            break;
+          }
         }
       })
       .subscribe();
 
     broadcastChannelRef.current = bc;
 
-    // DB channel for late-joiner sync
+    // DB channel for persistent state
     const dc = supabase.channel(`pulse-db-${sessionId}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'pulse_sessions',
