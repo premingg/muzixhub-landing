@@ -337,7 +337,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   handleSongEnd: async () => {
     saveListenedDuration();
-    const { repeat, currentSong, queue } = get();
+    const { repeat, currentSong, queue, inPulse } = get();
+    
+    // If in Pulse, let Pulse handle song end via its own subscriber
+    if (inPulse) return;
     
     if (repeat === 'one' && currentSong) {
       get().playSong(currentSong);
@@ -358,6 +361,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     await fetchSmartSong(get, currentSong);
   },
+
+  setInPulse: (v) => set({ inPulse: v }),
 }));
 
 async function fetchSmartSong(get: () => PlayerState, currentSong: Song | null) {
