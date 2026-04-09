@@ -61,6 +61,13 @@ export default function Pulse() {
   const dbChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const positionSyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inPulseRef = useRef(false);
+  const pulseQueueRef = useRef<Song[]>([]);
+  const activeSessionRef = useRef<PulseSession | null>(null);
+
+  // Keep refs in sync
+  useEffect(() => { pulseQueueRef.current = roomQueue; }, [roomQueue]);
+  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
 
   const isCreator = activeSession?.created_by === user?.id;
 
