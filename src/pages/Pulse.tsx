@@ -260,21 +260,21 @@ export default function Pulse() {
     loadSongs();
     subscribeToSession(raw.id);
 
-    // Sync playback
+    // Sync playback — use playSongAndSeek for precise late-joiner sync
     if (session.current_song_data) {
       setActiveSong(session.current_song_data);
-      const player = usePlayerStore.getState();
-      player.playSong(session.current_song_data);
-
+      
       if (session.is_playing) {
         const elapsed = (Date.now() - new Date(session.position_updated_at).getTime()) / 1000;
         const actualPosition = session.current_position + elapsed;
-        setTimeout(() => player.seekTo(actualPosition), 300);
+        playSongAndSeek(session.current_song_data, actualPosition);
       } else {
+        playSongAndSeek(session.current_song_data, session.current_position);
+        // Pause after loading
         setTimeout(() => {
-          player.seekTo(session.current_position);
-          if (player.isPlaying) player.togglePlay();
-        }, 300);
+          const p = usePlayerStore.getState();
+          if (p.isPlaying) p.togglePlay();
+        }, 500);
       }
     }
 
