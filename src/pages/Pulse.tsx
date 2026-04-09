@@ -391,35 +391,83 @@ export default function Pulse() {
     }
   };
 
-  // Position sync (creator only)
+  // Position sync + heartbeat broadcast (creator only)
   useEffect(() => {
     if (!activeSession || !isCreator) return;
 
     positionSyncRef.current = setInterval(async () => {
       const player = usePlayerStore.getState();
       if (player.isPlaying) {
+        const pos = player.progress;
+        // Update DB for late joiners
         await pulseTable().update({
-          current_position: player.progress,
+          current_position: pos,
           position_updated_at: new Date().toISOString(),
         }).eq("id", activeSession.id);
+        // Broadcast heartbeat with position for drift correction
+        sendBroadcast({
+          type: 'heartbeat',
+          member_count: activeSession.member_count,
+          position: pos,
+          is_playing: true,
+        } as any);
       }
-    }, 10000);
+    }, 5000);
 
     return () => {
       if (positionSyncRef.current) clearInterval(positionSyncRef.current);
     };
-  }, [activeSession?.id, isCreator]);
+  }, [activeSession?.id, isCreator, sendBroadcast]);
+
+  // Intercept song end in Pulse — auto-advance from Pulse queue instead of global queue
+  useEffect(() => {
+    if (!activeSession) return;
+
+    const unsubscribe = usePlayerStore.subscribe((state, prev) => {
+      // Detect song ended: was playing, now not, progress near duration
+      if (
+        prev.isPlaying && !state.isPlaying &&
+        state.duration > 0 && state.progress >= state.duration - 0.5 &&
+        inPulseRef.current
+      ) {
+        const queue = pulseQueueRef.current;
+        const session = activeSessionRef.current;
+        if (queue.length > 0 && session) {
+          // Auto-skip to next in Pulse queue
+          const nextSong = queue[0];
+          const newQueue = queue.slice(1);
+
+          pulseTable().update({
+            current_song_data: nextSong as any,
+            current_song_id: nextSong.id,
+            is_playing: true,
+            current_position: 0,
+            position_updated_at: new Date().toISOString(),
+            queue: newQueue as any,
+          }).eq("id", session.id);
+
+          sendBroadcast({ type: 'skip', song: nextSong, actioner: displayName, actionerId: user?.id || '' });
+          playSongAndSeek(nextSong, 0);
+          setActiveSong(nextSong);
+          setRoomQueue(newQueue);
+          setActiveSession(prev => prev ? { ...prev, current_song_data: nextSong, current_song_id: nextSong.id, is_playing: true, current_position: 0, queue: newQueue } : null);
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [activeSession?.id, sendBroadcast, displayName, user?.id, playSongAndSeek]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      inPulseRef.current = false;
       if (broadcastChannelRef.current) supabase.removeChannel(broadcastChannelRef.current);
       if (dbChannelRef.current) supabase.removeChannel(dbChannelRef.current);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (positionSyncRef.current) clearInterval(positionSyncRef.current);
     };
   }, []);
-
   const filteredSongs = songs.filter(
     (s) =>
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
