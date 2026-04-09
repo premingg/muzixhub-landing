@@ -61,6 +61,13 @@ export default function Pulse() {
   const dbChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const positionSyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inPulseRef = useRef(false);
+  const pulseQueueRef = useRef<Song[]>([]);
+  const activeSessionRef = useRef<PulseSession | null>(null);
+
+  // Keep refs in sync
+  useEffect(() => { pulseQueueRef.current = roomQueue; }, [roomQueue]);
+  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
 
   const isCreator = activeSession?.created_by === user?.id;
 
@@ -77,7 +84,27 @@ export default function Pulse() {
     setSongs(data || []);
   };
 
+  // Play a song and seek to a specific position once loaded
+  const playSongAndSeek = useCallback((song: Song, position: number) => {
+    const player = usePlayerStore.getState();
+    player.playSong(song);
+    if (position > 0) {
+      // Wait for audio to load before seeking
+      const checkSeek = () => {
+        const audio = usePlayerStore.getState().audio;
+        if (audio && audio.readyState >= 1) {
+          audio.currentTime = position;
+        } else {
+          setTimeout(checkSeek, 100);
+        }
+      };
+      setTimeout(checkSeek, 200);
+    }
+  }, []);
+
   const cleanupAndLeave = useCallback(() => {
+    inPulseRef.current = false;
+    usePlayerStore.getState().setInPulse(false);
     if (broadcastChannelRef.current) {
       supabase.removeChannel(broadcastChannelRef.current);
       broadcastChannelRef.current = null;
@@ -94,12 +121,14 @@ export default function Pulse() {
   }, []);
 
   const subscribeToSession = useCallback((sessionId: string) => {
+    inPulseRef.current = true;
+    usePlayerStore.getState().setInPulse(true);
+
     // Broadcast channel for instant events
     const bc = supabase.channel(`pulse-broadcast-${sessionId}`)
       .on('broadcast', { event: 'pulse_event' }, ({ payload }) => {
         const event = payload as BroadcastEvent;
         
-        // Skip events we sent ourselves (use actionerId to identify)
         if ('actionerId' in event && event.actionerId === user?.id) {
           return;
         }
@@ -109,14 +138,14 @@ export default function Pulse() {
         switch (event.type) {
           case 'song_change':
           case 'skip':
-            player.playSong(event.song);
+            playSongAndSeek(event.song, 0);
             setActiveSong(event.song);
             setActiveSession(prev => prev ? { ...prev, is_playing: true, current_song_data: event.song, current_position: 0 } : null);
             toast(`${event.actioner} is playing "${event.song.title}" 🎵`, { duration: 3000 });
             break;
           case 'play':
             if (!player.isPlaying) player.togglePlay();
-            setTimeout(() => player.seekTo(event.position), 100);
+            player.seekTo(event.position);
             setActiveSession(prev => prev ? { ...prev, is_playing: true, current_position: event.position } : null);
             toast(`${event.actioner} resumed ▶️`, { duration: 2000 });
             break;
@@ -138,13 +167,25 @@ export default function Pulse() {
             toast.error('The Pulse session has ended');
             cleanupAndLeave();
             break;
+          case 'heartbeat': {
+            // Drift correction for non-creators
+            const hb = event as any;
+            if (hb.position != null && hb.is_playing) {
+              const playerState = usePlayerStore.getState();
+              const drift = Math.abs(playerState.progress - hb.position);
+              if (drift > 2) {
+                playerState.seekTo(hb.position);
+              }
+            }
+            break;
+          }
         }
       })
       .subscribe();
 
     broadcastChannelRef.current = bc;
 
-    // DB channel for late-joiner sync
+    // DB channel for persistent state
     const dc = supabase.channel(`pulse-db-${sessionId}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'pulse_sessions',
@@ -221,21 +262,21 @@ export default function Pulse() {
     loadSongs();
     subscribeToSession(raw.id);
 
-    // Sync playback
+    // Sync playback — use playSongAndSeek for precise late-joiner sync
     if (session.current_song_data) {
       setActiveSong(session.current_song_data);
-      const player = usePlayerStore.getState();
-      player.playSong(session.current_song_data);
-
+      
       if (session.is_playing) {
         const elapsed = (Date.now() - new Date(session.position_updated_at).getTime()) / 1000;
         const actualPosition = session.current_position + elapsed;
-        setTimeout(() => player.seekTo(actualPosition), 300);
+        playSongAndSeek(session.current_song_data, actualPosition);
       } else {
+        playSongAndSeek(session.current_song_data, session.current_position);
+        // Pause after loading
         setTimeout(() => {
-          player.seekTo(session.current_position);
-          if (player.isPlaying) player.togglePlay();
-        }, 300);
+          const p = usePlayerStore.getState();
+          if (p.isPlaying) p.togglePlay();
+        }, 500);
       }
     }
 
@@ -352,35 +393,83 @@ export default function Pulse() {
     }
   };
 
-  // Position sync (creator only)
+  // Position sync + heartbeat broadcast (creator only)
   useEffect(() => {
     if (!activeSession || !isCreator) return;
 
     positionSyncRef.current = setInterval(async () => {
       const player = usePlayerStore.getState();
       if (player.isPlaying) {
+        const pos = player.progress;
+        // Update DB for late joiners
         await pulseTable().update({
-          current_position: player.progress,
+          current_position: pos,
           position_updated_at: new Date().toISOString(),
         }).eq("id", activeSession.id);
+        // Broadcast heartbeat with position for drift correction
+        sendBroadcast({
+          type: 'heartbeat',
+          member_count: activeSession.member_count,
+          position: pos,
+          is_playing: true,
+        } as any);
       }
-    }, 10000);
+    }, 5000);
 
     return () => {
       if (positionSyncRef.current) clearInterval(positionSyncRef.current);
     };
-  }, [activeSession?.id, isCreator]);
+  }, [activeSession?.id, isCreator, sendBroadcast]);
+
+  // Intercept song end in Pulse — auto-advance from Pulse queue instead of global queue
+  useEffect(() => {
+    if (!activeSession) return;
+
+    const unsubscribe = usePlayerStore.subscribe((state, prev) => {
+      // Detect song ended: was playing, now not, progress near duration
+      if (
+        prev.isPlaying && !state.isPlaying &&
+        state.duration > 0 && state.progress >= state.duration - 0.5 &&
+        inPulseRef.current
+      ) {
+        const queue = pulseQueueRef.current;
+        const session = activeSessionRef.current;
+        if (queue.length > 0 && session) {
+          // Auto-skip to next in Pulse queue
+          const nextSong = queue[0];
+          const newQueue = queue.slice(1);
+
+          pulseTable().update({
+            current_song_data: nextSong as any,
+            current_song_id: nextSong.id,
+            is_playing: true,
+            current_position: 0,
+            position_updated_at: new Date().toISOString(),
+            queue: newQueue as any,
+          }).eq("id", session.id);
+
+          sendBroadcast({ type: 'skip', song: nextSong, actioner: displayName, actionerId: user?.id || '' });
+          playSongAndSeek(nextSong, 0);
+          setActiveSong(nextSong);
+          setRoomQueue(newQueue);
+          setActiveSession(prev => prev ? { ...prev, current_song_data: nextSong, current_song_id: nextSong.id, is_playing: true, current_position: 0, queue: newQueue } : null);
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [activeSession?.id, sendBroadcast, displayName, user?.id, playSongAndSeek]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      inPulseRef.current = false;
       if (broadcastChannelRef.current) supabase.removeChannel(broadcastChannelRef.current);
       if (dbChannelRef.current) supabase.removeChannel(dbChannelRef.current);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (positionSyncRef.current) clearInterval(positionSyncRef.current);
     };
   }, []);
-
   const filteredSongs = songs.filter(
     (s) =>
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||

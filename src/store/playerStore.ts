@@ -19,6 +19,7 @@ interface PlayerState {
   showFullPlayer: boolean;
   showQueue: boolean;
   audio: HTMLAudioElement | null;
+  inPulse: boolean;
 
   playSong: (song: Song, queue?: Song[]) => void;
   togglePlay: () => void;
@@ -38,6 +39,7 @@ interface PlayerState {
   removeFromQueue: (index: number) => void;
   reorderQueue: (from: number, to: number) => void;
   handleSongEnd: () => void;
+  setInPulse: (v: boolean) => void;
 }
 
 let currentPlayRecordId: string | null = null;
@@ -164,6 +166,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   showFullPlayer: false,
   showQueue: false,
   audio: null,
+  inPulse: false,
 
   playSong: (song, queue) => {
     const state = get();
@@ -334,7 +337,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   handleSongEnd: async () => {
     saveListenedDuration();
-    const { repeat, currentSong, queue } = get();
+    const { repeat, currentSong, queue, inPulse } = get();
+    
+    // If in Pulse, let Pulse handle song end via its own subscriber
+    if (inPulse) return;
     
     if (repeat === 'one' && currentSong) {
       get().playSong(currentSong);
@@ -355,6 +361,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     await fetchSmartSong(get, currentSong);
   },
+
+  setInPulse: (v) => set({ inPulse: v }),
 }));
 
 async function fetchSmartSong(get: () => PlayerState, currentSong: Song | null) {
