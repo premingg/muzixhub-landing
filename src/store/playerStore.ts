@@ -190,6 +190,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const audio = new Audio(audioSrc);
     audio.volume = get().volume;
+    audio.loop = get().repeat === 'one';
 
     audio.addEventListener('timeupdate', () => {
       set({ progress: audio.currentTime });
