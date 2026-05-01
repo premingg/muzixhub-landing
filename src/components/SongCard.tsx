@@ -5,6 +5,7 @@ import { usePlayerStore, type Song } from "@/store/playerStore";
 import { useLikedSongs } from "@/hooks/useLikedSongs";
 import { toast } from "sonner";
 import { useSongCover } from "@/hooks/useTelegramImage";
+import { formatArtistDisplay } from "@/lib/artistParsing";
 
 interface SongCardProps {
   song: Song;
@@ -92,7 +93,7 @@ export function SongCard({ song, allSongs }: SongCardProps) {
           navigate(`/artist/${encodeURIComponent(song.artist)}`);
         }}
       >
-        {song.artist}
+        {formatArtistDisplay(song.artist, (song as any).featuring_artists)}
       </p>
     </motion.div>
   );
