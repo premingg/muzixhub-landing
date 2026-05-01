@@ -278,9 +278,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
   toggleRepeat: () =>
-    set((s) => ({
-      repeat: s.repeat === 'off' ? 'all' : s.repeat === 'all' ? 'one' : 'off',
-    })),
+    set((s) => {
+      const next = s.repeat === 'off' ? 'all' : s.repeat === 'all' ? 'one' : 'off';
+      if (s.audio) s.audio.loop = next === 'one';
+      return { repeat: next };
+    }),
 
   toggleFullPlayer: () => set((s) => ({ showFullPlayer: !s.showFullPlayer })),
   toggleQueue: () => set((s) => ({ showQueue: !s.showQueue })),
