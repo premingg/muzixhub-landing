@@ -11,6 +11,7 @@ import { useDraggableSlider } from "@/hooks/useDraggableSlider";
 import { SongContextMenu } from "@/components/SongContextMenu";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { formatArtistDisplay } from "@/lib/artistParsing";
 
 function formatTime(s: number) {
   if (!s || isNaN(s)) return "0:00";
@@ -130,7 +131,7 @@ export function FullPlayer() {
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <h2 className="text-2xl font-bold text-white truncate">{currentSong?.title || "No song"}</h2>
-                    <p className="text-white/60 mt-0.5 text-sm cursor-pointer active:text-primary" onClick={handleGoToArtist}>{currentSong?.artist}</p>
+                    <p className="text-white/60 mt-0.5 text-sm cursor-pointer active:text-primary" onClick={handleGoToArtist}>{currentSong ? formatArtistDisplay(currentSong.artist, (currentSong as any).featuring_artists) : ""}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     {currentSong && (
@@ -209,7 +210,7 @@ export function FullPlayer() {
               <div className="w-full flex items-center justify-between mb-5">
                 <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-bold text-white truncate">{currentSong?.title || "No song"}</h2>
-                  <p className="text-white/50 text-sm cursor-pointer hover:text-primary transition-colors" onClick={handleGoToArtist}>{currentSong?.artist}</p>
+                  <p className="text-white/50 text-sm cursor-pointer hover:text-primary transition-colors" onClick={handleGoToArtist}>{currentSong ? formatArtistDisplay(currentSong.artist, (currentSong as any).featuring_artists) : ""}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   {currentSong && (

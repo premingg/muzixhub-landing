@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Upload, Image, Music, Loader2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FeaturingArtistsInput } from "@/components/admin/FeaturingArtistsInput";
 
 const GENRES = ["Pop", "Hip Hop", "R&B", "Electronic", "Rock", "Jazz", "Classical", "Indie", "Country", "Latin", "Metal", "Folk", "Soul", "Reggae", "Blues", "Afrobeats", "K-Pop", "Lo-fi", "Phonk", "Other"];
 
@@ -32,6 +33,7 @@ export default function AdminUpload() {
   const [form, setForm] = useState({
     title: "", artist: "", album: "", genre: "", description: "",
   });
+  const [featuringArtists, setFeaturingArtists] = useState<string[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -111,6 +113,7 @@ export default function AdminUpload() {
         id: songId,
         title: form.title,
         artist: form.artist,
+        featuring_artists: featuringArtists,
         album: form.album || null,
         genre: form.genre || null,
         description: form.description || null,
@@ -186,6 +189,16 @@ export default function AdminUpload() {
               )}
             </div>
           </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-foreground mb-1.5 block">Featuring Artists</label>
+          <FeaturingArtistsInput
+            value={featuringArtists}
+            onChange={setFeaturingArtists}
+            placeholder="Type artist name and press Enter"
+          />
+          <p className="text-xs text-muted-foreground mt-1">Will display as: "{form.artist || "Main Artist"}{featuringArtists.length ? ` ft. ${featuringArtists.join(", ")}` : ""}"</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
