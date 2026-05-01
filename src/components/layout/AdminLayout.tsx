@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Upload, Music, ChevronLeft, Disc3, Users, FolderUp } from "lucide-react";
+import { LayoutDashboard, Upload, Music, ChevronLeft, Disc3, Users, FolderUp, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MiniPlayer } from "@/components/layout/MiniPlayer";
 import { usePlayerStore } from "@/store/playerStore";
@@ -8,6 +8,7 @@ import { usePlayerStore } from "@/store/playerStore";
 const adminLinks = [
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/admin/upload", label: "Upload Song", icon: Upload },
+  { to: "/admin/bulk-upload", label: "Bulk Upload", icon: Layers },
   { to: "/admin/upload-album", label: "Upload Album", icon: FolderUp },
   { to: "/admin/songs", label: "Manage Songs", icon: Music },
   { to: "/admin/albums", label: "Manage Albums", icon: Disc3 },

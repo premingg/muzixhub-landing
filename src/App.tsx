@@ -17,6 +17,7 @@ import Pulse from "./pages/Pulse";
 import AlbumView from "./pages/AlbumView";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUpload from "./pages/admin/AdminUpload";
+import AdminBulkUpload from "./pages/admin/AdminBulkUpload";
 import AdminSongs from "./pages/admin/AdminSongs";
 import AdminAlbums from "./pages/admin/AdminAlbums";
 import AdminAlbumUpload from "./pages/admin/AdminAlbumUpload";
@@ -58,6 +59,7 @@ const App = () => (
             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="/admin/dashboard" element={<AdminRoute><AdminLayout><AdminDashboard /></AdminLayout></AdminRoute>} />
             <Route path="/admin/upload" element={<AdminRoute><AdminLayout><AdminUpload /></AdminLayout></AdminRoute>} />
+            <Route path="/admin/bulk-upload" element={<AdminRoute><AdminLayout><AdminBulkUpload /></AdminLayout></AdminRoute>} />
             <Route path="/admin/upload-album" element={<AdminRoute><AdminLayout><AdminAlbumUpload /></AdminLayout></AdminRoute>} />
             <Route path="/admin/songs" element={<AdminRoute><AdminLayout><AdminSongs /></AdminLayout></AdminRoute>} />
             <Route path="/admin/albums" element={<AdminRoute><AdminLayout><AdminAlbums /></AdminLayout></AdminRoute>} />
