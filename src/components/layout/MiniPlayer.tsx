@@ -9,6 +9,7 @@ import { useLikedSongs } from "@/hooks/useLikedSongs";
 import { useDraggableSlider } from "@/hooks/useDraggableSlider";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { formatArtistDisplay } from "@/lib/artistParsing";
 
 function formatTime(s: number) {
   if (!s || isNaN(s)) return "0:00";
@@ -67,7 +68,7 @@ export function MiniPlayer() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{currentSong.title}</p>
-            <p className="text-xs text-muted-foreground truncate">{currentSong.artist}</p>
+            <p className="text-xs text-muted-foreground truncate">{formatArtistDisplay(currentSong.artist, (currentSong as any).featuring_artists)}</p>
           </div>
           <div className="flex items-center gap-0.5">
             <button onClick={(e) => { e.stopPropagation(); prevSong(); }} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground active:text-foreground">
@@ -114,7 +115,7 @@ export function MiniPlayer() {
               className="text-xs text-muted-foreground truncate hover:text-primary hover:underline cursor-pointer"
               onClick={(e) => { e.stopPropagation(); if (currentSong.artist) navigate(`/artist/${encodeURIComponent(currentSong.artist)}`); }}
             >
-              {currentSong.artist}
+              {formatArtistDisplay(currentSong.artist, (currentSong as any).featuring_artists)}
             </p>
           </div>
           <motion.button
