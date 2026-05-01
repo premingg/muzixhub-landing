@@ -191,6 +191,16 @@ export default function AdminUpload() {
           </div>
         </div>
 
+        <div>
+          <label className="text-sm font-medium text-foreground mb-1.5 block">Featuring Artists</label>
+          <FeaturingArtistsInput
+            value={featuringArtists}
+            onChange={setFeaturingArtists}
+            placeholder="Type artist name and press Enter"
+          />
+          <p className="text-xs text-muted-foreground mt-1">Will display as: "{form.artist || "Main Artist"}{featuringArtists.length ? ` ft. ${featuringArtists.join(", ")}` : ""}"</p>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-sm font-medium text-foreground mb-1.5 block">Album</label>
