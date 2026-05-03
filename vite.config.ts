@@ -33,14 +33,14 @@ export default defineConfig(() => ({
         start_url: "/",
         icons: [
           {
-            src: "/favicon.ico",
+            src: "/MuzixHub Logo.jpeg",
             sizes: "192x192",
-            type: "image/png",
+            type: "image/jpeg",
           },
           {
-            src: "/favicon.ico",
+            src: "/MuzixHub Logo.jpeg",
             sizes: "512x512",
-            type: "image/png",
+            type: "image/jpeg",
           },
         ],
       },
@@ -49,6 +49,17 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Force Vite/Rollup to resolve the jsmediatags package to the
+      // bundled browser build which avoids package export/main issues.
+      // The code imports the package using the full subpath
+      // "jsmediatags/dist/jsmediatags.min.js" so map that exact specifier
+      // to the real file location to avoid double-appending "dist/...".
+      "jsmediatags/dist/jsmediatags.min.js": path.resolve(
+        __dirname,
+        "node_modules/jsmediatags/dist/jsmediatags.min.js"
+      ),
+      // keep a fallback alias for plain imports
+      "jsmediatags": path.resolve(__dirname, "node_modules/jsmediatags/dist/jsmediatags.min.js"),
     },
   },
 }));
